@@ -1,0 +1,159 @@
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.StaticFiles;
+
+namespace FileUploadAPI.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class FileController : ControllerBase
+    {
+        private readonly IWebHostEnvironment _environment;
+        private readonly string _uploadPath;
+        private readonly IHttpContextAccessor _httpContextAccessor;
+
+        public FileController(IWebHostEnvironment environment, IHttpContextAccessor httpContextAccessor)
+        {
+            _environment = environment;
+            _httpContextAccessor = httpContextAccessor;
+            _uploadPath = Path.Combine(_environment.ContentRootPath, "UploadedFiles");
+            
+            // Create directory if it doesn't exist
+            if (!Directory.Exists(_uploadPath))
+            {
+                Directory.CreateDirectory(_uploadPath);
+            }
+        }
+
+        private string GetFileUrl(string fileName)
+        {
+            var request = _httpContextAccessor.HttpContext.Request;
+            var baseUrl = $"{request.Scheme}://{request.Host}";
+            return $"{baseUrl}/uploads/{fileName}";
+        }
+
+        [HttpPost("upload")]
+        public async Task<IActionResult> Upload(IFormFile file)
+        {
+            try
+            {
+                if (file == null || file.Length == 0)
+                {
+                    return BadRequest(new { message = "No file uploaded" });
+                }
+
+                // Generate unique filename to avoid conflicts
+                var fileName = $"{Guid.NewGuid()}_{file.FileName}";
+                var filePath = Path.Combine(_uploadPath, fileName);
+
+                using (var stream = new FileStream(filePath, FileMode.Create))
+                {
+                    await file.CopyToAsync(stream);
+                }
+
+                // Get file extension to determine file type
+                var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+                var imageExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg" };
+                var isImage = imageExtensions.Contains(extension);
+
+                var fileInfo = new
+                {
+                    fileName = fileName,
+                    originalFileName = file.FileName,
+                    fileSize = file.Length,
+                    uploadedAt = DateTime.Now,
+                    fileUrl = GetFileUrl(fileName),
+                    fileType = file.ContentType,
+                    isImage = isImage
+                };
+
+                return Ok(fileInfo);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error uploading file", error = ex.Message });
+            }
+        }
+
+        [HttpGet("download/{fileName}")]
+        public IActionResult Download(string fileName)
+        {
+            try
+            {
+                var filePath = Path.Combine(_uploadPath, fileName);
+
+                if (!System.IO.File.Exists(filePath))
+                {
+                    return NotFound(new { message = "File not found" });
+                }
+
+                var provider = new FileExtensionContentTypeProvider();
+                if (!provider.TryGetContentType(fileName, out var contentType))
+                {
+                    contentType = "application/octet-stream";
+                }
+
+                var fileBytes = System.IO.File.ReadAllBytes(filePath);
+                return File(fileBytes, contentType, fileName);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error downloading file", error = ex.Message });
+            }
+        }
+
+        [HttpDelete("delete/{fileName}")]
+        public IActionResult Delete(string fileName)
+        {
+            try
+            {
+                var filePath = Path.Combine(_uploadPath, fileName);
+
+                if (!System.IO.File.Exists(filePath))
+                {
+                    return NotFound(new { message = "File not found" });
+                }
+
+                System.IO.File.Delete(filePath);
+                return Ok(new { message = "File deleted successfully" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error deleting file", error = ex.Message });
+            }
+        }
+
+        [HttpGet("list")]
+        public IActionResult ListFiles()
+        {
+            try
+            {
+                var imageExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg" };
+                
+                var files = Directory.GetFiles(_uploadPath)
+                    .Select(filePath => new FileInfo(filePath))
+                    .Select(fileInfo => 
+                    {
+                        var extension = fileInfo.Extension.ToLowerInvariant();
+                        var isImage = imageExtensions.Contains(extension);
+                        
+                        return new
+                        {
+                            fileName = fileInfo.Name,
+                            fileSize = fileInfo.Length,
+                            uploadedAt = fileInfo.CreationTime,
+                            fileUrl = GetFileUrl(fileInfo.Name),
+                            isImage = isImage
+                        };
+                    })
+                    .OrderByDescending(f => f.uploadedAt)
+                    .ToList();
+
+                return Ok(files);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error listing files", error = ex.Message });
+            }
+        }
+    }
+}
