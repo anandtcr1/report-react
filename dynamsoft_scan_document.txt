@@ -1,0 +1,73 @@
+npm install dynamsoft-web-twain
+
+
+
+
+
+
+
+
+import React, { useEffect, useRef, useState } from "react";
+import Dynamsoft from "dynamsoft-web-twain";
+
+const DocumentScanner = () => {
+  const dwtRef = useRef(null);
+  const [dwt, setDwt] = useState(null);
+
+  useEffect(() => {
+    Dynamsoft.DWT.ProductKey = "YOUR_DYNAMSOFT_LICENSE_KEY";
+
+    Dynamsoft.DWT.ResourcesPath = "/dynamsoft"; 
+    // public/dynamsoft folder
+
+    Dynamsoft.DWT.RegisterEvent("OnWebTwainReady", () => {
+      const obj = Dynamsoft.DWT.GetWebTwain("dwt-container");
+      dwtRef.current = obj;
+      setDwt(obj);
+    });
+
+    Dynamsoft.DWT.Load();
+  }, []);
+
+  const scan = () => {
+    if (!dwt) return;
+
+    dwt.SelectSource(() => {
+      dwt.OpenSource();
+      dwt.AcquireImage({
+        IfDisableSourceAfterAcquire: true,
+        PixelType: Dynamsoft.DWT.EnumDWT_PixelType.TWPT_RGB,
+        Resolution: 300,
+        IfFeederEnabled: true,   // ADF
+        IfDuplexEnabled: true
+      });
+    });
+  };
+
+  const uploadPDF = () => {
+    if (!dwt || dwt.HowManyImagesInBuffer === 0) return;
+
+    dwt.HTTPUploadAllThroughPostAsPDF(
+      "https://your-api/upload",
+      "scanned.pdf",
+      () => alert("Upload success"),
+      err => console.error(err)
+    );
+  };
+
+  return (
+    <div>
+      <h3>Document Scanner</h3>
+
+      <div
+        id="dwt-container"
+        style={{ width: "600px", height: "400px" }}
+      />
+
+      <button onClick={scan}>Scan</button>
+      <button onClick={uploadPDF}>Upload as PDF</button>
+    </div>
+  );
+};
+
+export default DocumentScanner;
