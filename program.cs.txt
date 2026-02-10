@@ -1,0 +1,59 @@
+using Microsoft.Extensions.FileProviders;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add services to the container.
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+// Add HttpContextAccessor to access request information
+builder.Services.AddHttpContextAccessor();
+
+// Configure CORS to allow React app
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowReactApp",
+        builder => builder
+            .WithOrigins("http://localhost:3000") // React default port
+            .AllowAnyMethod()
+            .AllowAnyHeader());
+});
+
+// Configure file upload size limit (optional)
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 104857600; // 100 MB
+});
+
+var app = builder.Build();
+
+// Configure the HTTP request pipeline.
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+app.UseHttpsRedirection();
+
+app.UseCors("AllowReactApp");
+
+// Serve static files from UploadedFiles directory
+var uploadPath = Path.Combine(builder.Environment.ContentRootPath, "UploadedFiles");
+if (!Directory.Exists(uploadPath))
+{
+    Directory.CreateDirectory(uploadPath);
+}
+
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(uploadPath),
+    RequestPath = "/uploads"
+});
+
+app.UseAuthorization();
+
+app.MapControllers();
+
+app.Run();
